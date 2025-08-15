@@ -67,10 +67,15 @@ A professional, feature-rich YouTube video and Shorts downloader built with C# a
 ### Supported URL Formats
 
 https://www.youtube.com/watch?v=VIDEO_ID
+
 https://youtu.be/VIDEO_ID
+
 https://www.youtube.com/shorts/VIDEO_ID
+
 https://m.youtube.com/watch?v=VIDEO_ID
+
 https://www.youtube.com/embed/VIDEO_ID
+
 https://www.youtube.com/live/VIDEO_ID
 
 
