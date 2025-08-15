@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -12,8 +14,8 @@ using YoutubeExplode.Videos;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Collections.Generic;
 
-// Use alias to avoid ambiguity with MessageBox
 using WpfMessageBox = System.Windows.MessageBox;
 using YoutubeExplode.Common;
 
@@ -32,37 +34,73 @@ namespace YouTubeDownloader
         private long totalBytes;
         private long downloadedBytes;
 
+        private readonly ObservableCollection<DownloadItem> downloadItems;
+        private readonly SemaphoreSlim downloadSemaphore;
+        private bool isMultipleDownloading = false;
 
-        // Remove the GeneratedRegex lines completely and replace with:
+        private readonly Queue<(DateTime Time, long Bytes)> downloadHistory = [];
+        private const int HistoryWindowSeconds = 10;
+
         private static readonly Regex SpaceRegex = new(@"\s+", RegexOptions.Compiled);
-
 
         public MainWindow()
         {
             InitializeComponent();
 
-            // Initialize fields
             httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             youtubeClient = new YoutubeClient();
             appSettings = AppSettings.Load();
+            downloadItems = [];
+            downloadSemaphore = new SemaphoreSlim(2, 10);
 
-            InitializeApplication();
-            SetupFFmpeg();
+            this.Loaded += MainWindow_Loaded;
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                InitializeApplication();
+                SetupFFmpeg();
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Error initializing application: {ex.Message}", "Initialization Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void InitializeApplication()
         {
-            // Initialize quality combobox with default values
             InitializeQualityComboBox();
-
-            // Set saved format selection
             SetSavedFormatSelection();
 
-            // Set initial UI state
-            DownloadButton.IsEnabled = false;
-            VideoInfoGroup.Visibility = Visibility.Collapsed;
+            if (appSettings.IsMultipleMode && MultiModeRadio != null)
+            {
+                MultiModeRadio.IsChecked = true;
+                ShowMultipleMode();
+            }
+            else if (SingleModeRadio != null)
+            {
+                SingleModeRadio.IsChecked = true;
+                ShowSingleMode();
+            }
 
-            // Setup output folder
+            if (MaxDownloadsComboBox != null)
+            {
+                MaxDownloadsComboBox.SelectedIndex = Math.Max(0, Math.Min(4, appSettings.MaxSimultaneousDownloads - 1));
+                UpdateDownloadSemaphore();
+            }
+
+            if (DownloadStatusList != null)
+                DownloadStatusList.ItemsSource = downloadItems;
+
+            if (DownloadButton != null)
+                DownloadButton.IsEnabled = false;
+
+            if (VideoInfoGroup != null)
+                VideoInfoGroup.Visibility = Visibility.Collapsed;
+
             SetupOutputFolder();
         }
 
@@ -70,7 +108,6 @@ namespace YouTubeDownloader
         {
             string outputFolder = appSettings.OutputFolder;
 
-            // If no saved folder or folder doesn't exist, prompt user
             if (string.IsNullOrEmpty(outputFolder) || !Directory.Exists(outputFolder))
             {
                 var result = WpfMessageBox.Show(
@@ -87,7 +124,6 @@ namespace YouTubeDownloader
                     }
                     else
                     {
-                        // User cancelled, use default but don't create it
                         outputFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "YouTube Downloads");
                         appSettings.OutputFolder = outputFolder;
 
@@ -100,13 +136,13 @@ namespace YouTubeDownloader
                 }
                 else
                 {
-                    // User doesn't want to select folder, close application
                     System.Windows.Application.Current.Shutdown();
                     return;
                 }
             }
 
-            OutputPathTextBox.Text = outputFolder;
+            if (OutputPathTextBox != null)
+                OutputPathTextBox.Text = outputFolder;
         }
 
         private bool SelectOutputFolder()
@@ -128,7 +164,8 @@ namespace YouTubeDownloader
                 {
                     appSettings.OutputFolder = dialog.SelectedPath;
                     appSettings.Save();
-                    OutputPathTextBox.Text = dialog.SelectedPath;
+                    if (OutputPathTextBox != null)
+                        OutputPathTextBox.Text = dialog.SelectedPath;
                     return true;
                 }
             }
@@ -140,8 +177,234 @@ namespace YouTubeDownloader
             return false;
         }
 
+        private void UpdateDownloadSemaphore()
+        {
+            if (MaxDownloadsComboBox == null) return;
+
+            int maxDownloads = MaxDownloadsComboBox.SelectedIndex + 1;
+            downloadSemaphore.Release(downloadSemaphore.CurrentCount);
+            for (int i = 0; i < maxDownloads; i++)
+            {
+                downloadSemaphore.Wait(0);
+            }
+        }
+
+        private void ModeRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            if (SingleModeRadio == null || MultiModeRadio == null) return;
+
+            if (SingleModeRadio.IsChecked == true)
+            {
+                ShowSingleMode();
+                appSettings.IsMultipleMode = false;
+            }
+            else
+            {
+                ShowMultipleMode();
+                appSettings.IsMultipleMode = true;
+            }
+            appSettings.Save();
+        }
+
+        private void ShowSingleMode()
+        {
+            if (SingleVideoGroup != null)
+                SingleVideoGroup.Visibility = Visibility.Visible;
+            if (MultipleVideoGroup != null)
+                MultipleVideoGroup.Visibility = Visibility.Collapsed;
+            if (MultipleProgressGroup != null)
+                MultipleProgressGroup.Visibility = Visibility.Collapsed;
+            if (SingleProgressGroup != null)
+                SingleProgressGroup.Visibility = Visibility.Visible;
+
+            // FIX 1: Update global selectors state
+            UpdateGlobalSelectorsState();
+        }
+
+        private void ShowMultipleMode()
+        {
+            if (SingleVideoGroup != null)
+                SingleVideoGroup.Visibility = Visibility.Collapsed;
+            if (MultipleVideoGroup != null)
+                MultipleVideoGroup.Visibility = Visibility.Visible;
+            if (MultipleProgressGroup != null)
+                MultipleProgressGroup.Visibility = Visibility.Visible;
+            if (SingleProgressGroup != null)
+                SingleProgressGroup.Visibility = Visibility.Collapsed;
+            if (VideoInfoGroup != null)
+                VideoInfoGroup.Visibility = Visibility.Collapsed;
+
+            // FIX 1: Update global selectors state
+            UpdateGlobalSelectorsState();
+        }
+
+        // FIX 1: Disable global selectors in multiple mode
+        private void UpdateGlobalSelectorsState()
+        {
+            bool isSingleMode = SingleModeRadio?.IsChecked == true;
+
+            if (FormatComboBox != null)
+                FormatComboBox.IsEnabled = isSingleMode;
+
+            if (QualityComboBox != null)
+                QualityComboBox.IsEnabled = isSingleMode;
+        }
+
+        private void FormatComboBox_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            UpdateQualityOptionsForFormat();
+        }
+
+        private void UpdateQualityOptionsForFormat()
+        {
+            if (FormatComboBox == null || QualityLabel == null) return;
+
+            string selectedFormat = GetSelectedComboBoxText(FormatComboBox);
+
+            if (selectedFormat.Contains("Audio Only"))
+            {
+                QualityLabel.Text = "Audio Quality:";
+                UpdateAudioQualityOptions();
+            }
+            else
+            {
+                QualityLabel.Text = "Video Quality:";
+                if (currentStreamManifest != null)
+                {
+                    UpdateQualityOptionsFromVideo();
+                }
+                else
+                {
+                    InitializeQualityComboBox();
+                }
+            }
+        }
+
+        private void UpdateAudioQualityOptions()
+        {
+            if (QualityComboBox == null) return;
+
+            QualityComboBox.Items.Clear();
+            QualityComboBox.Items.Add("🏆 Best Available");
+
+            if (currentStreamManifest != null)
+            {
+                var audioStreams = currentStreamManifest.GetAudioOnlyStreams()
+                    .OrderByDescending(s => s.Bitrate)
+                    .ToList();
+
+                foreach (var stream in audioStreams.Take(5))
+                {
+                    string bitrateKbps = $"{stream.Bitrate.KiloBitsPerSecond:F0} kbps";
+                    QualityComboBox.Items.Add($"🎵 {bitrateKbps}");
+                }
+            }
+            else
+            {
+                QualityComboBox.Items.Add("🎵 320 kbps");
+                QualityComboBox.Items.Add("🎵 256 kbps");
+                QualityComboBox.Items.Add("🎵 192 kbps");
+                QualityComboBox.Items.Add("🎵 128 kbps");
+            }
+
+            QualityComboBox.SelectedIndex = 0;
+        }
+
+        private async void ProcessUrlsButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (MultipleUrlsTextBox == null || ProcessUrlsButton == null) return;
+
+                string urlsText = MultipleUrlsTextBox.Text.Trim();
+                if (string.IsNullOrEmpty(urlsText))
+                {
+                    WpfMessageBox.Show("Please enter some YouTube URLs", "No URLs",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var urls = urlsText.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(url => url.Trim())
+                    .Where(url => !string.IsNullOrEmpty(url) && IsValidYouTubeUrl(url))
+                    .Select(url => NormalizeYouTubeUrl(url))  // Normalize URLs including Shorts
+                    .Take(20)
+                    .ToList();
+
+                if (urls.Count == 0)
+                {
+                    WpfMessageBox.Show("No valid YouTube URLs found", "Invalid URLs",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                downloadItems.Clear();
+                ProcessUrlsButton.IsEnabled = false;
+                ProcessUrlsButton.Content = "Processing...";
+                UpdateOverallProgress();
+
+                foreach (string url in urls)
+                {
+                    downloadItems.Add(new DownloadItem { Url = url, Title = "Processing...", Status = "Loading" });
+                }
+
+                var tasks = downloadItems.Select(async item =>
+                {
+                    try
+                    {
+                        // Normalize the URL before processing
+                        string normalizedUrl = NormalizeYouTubeUrl(item.Url);
+
+                        var video = await youtubeClient.Videos.GetAsync(normalizedUrl);
+                        var streamManifest = await youtubeClient.Videos.Streams.GetManifestAsync(normalizedUrl);
+
+                        item.Video = video;
+                        item.StreamManifest = streamManifest;
+                        item.Format = "🎬 Video - MP4 (H264)";
+                        item.Quality = "🏆 Best Available";
+                        item.Status = "Ready";
+
+                        item.OnPropertyChanged(nameof(item.Quality));
+                        item.OnPropertyChanged(nameof(item.Format));
+                        item.OnPropertyChanged(nameof(item.Status));
+                    }
+                    catch (Exception ex)
+                    {
+                        item.Title = $"Failed to load: {ex.Message[..Math.Min(ex.Message.Length, 30)]}...";
+                        item.Status = "Error";
+                        item.OnPropertyChanged(nameof(item.Title));
+                        item.OnPropertyChanged(nameof(item.Status));
+                    }
+                }).ToArray();
+
+                await Task.WhenAll(tasks);
+
+                if (DownloadButton != null)
+                    DownloadButton.IsEnabled = downloadItems.Count(item => item.Status == "Ready") > 0;
+
+                UpdateOverallProgress();
+                UpdateGlobalSelectorsState();
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Error processing URLs: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (ProcessUrlsButton != null)
+                {
+                    ProcessUrlsButton.IsEnabled = true;
+                    ProcessUrlsButton.Content = "📋 Process URLs";
+                }
+            }
+        }
+
+
         private void InitializeQualityComboBox()
         {
+            if (QualityComboBox == null) return;
+
             QualityComboBox.Items.Clear();
             QualityComboBox.Items.Add("🏆 Best Available");
             QualityComboBox.SelectedIndex = 0;
@@ -149,7 +412,8 @@ namespace YouTubeDownloader
 
         private void SetSavedFormatSelection()
         {
-            // Set saved format selection
+            if (FormatComboBox == null) return;
+
             for (int i = 0; i < FormatComboBox.Items.Count; i++)
             {
                 if (FormatComboBox.Items[i] is System.Windows.Controls.ComboBoxItem item)
@@ -202,15 +466,19 @@ namespace YouTubeDownloader
         {
             try
             {
+                if (UrlTextBox == null) return;
+
                 string url = UrlTextBox.Text.Trim();
                 if (string.IsNullOrEmpty(url) || !IsValidYouTubeUrl(url))
                 {
-                    WpfMessageBox.Show("Please enter a valid YouTube URL", "Invalid URL",
+                    WpfMessageBox.Show("Please enter a valid YouTube URL (including Shorts)", "Invalid URL",
                         MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                await LoadVideoPreview(url);
+                // Normalize the URL to handle Shorts
+                string normalizedUrl = NormalizeYouTubeUrl(url);
+                await LoadVideoPreview(normalizedUrl);
             }
             catch (OperationCanceledException)
             {
@@ -224,6 +492,7 @@ namespace YouTubeDownloader
             }
         }
 
+
         private async Task LoadVideoPreview(string url)
         {
             cancellationTokenSource?.Cancel();
@@ -235,7 +504,6 @@ namespace YouTubeDownloader
                 SetLoadingState(true);
                 UpdateProgressStatus("Fetching video information...", 10);
 
-                // Get video metadata with timeout and cancellation
                 var videoTask = youtubeClient.Videos.GetAsync(url, cancellationToken);
                 var manifestTask = youtubeClient.Videos.Streams.GetManifestAsync(url, cancellationToken);
 
@@ -247,20 +515,26 @@ namespace YouTubeDownloader
 
                 UpdateProgressStatus("Processing video information...", 80);
 
-                // Update UI with video information
-                TitleTextBlock.Text = currentVideo.Title;
-                DurationTextBlock.Text = FormatDuration(currentVideo.Duration);
-                ViewsTextBlock.Text = FormatViews(currentVideo.Engagement.ViewCount);
+                if (TitleTextBlock != null)
+                    TitleTextBlock.Text = currentVideo.Title;
 
-                // Load thumbnail asynchronously
+                if (DurationTextBlock != null)
+                    DurationTextBlock.Text = FormatDuration(currentVideo.Duration);
+
+                if (ViewsTextBlock != null)
+                    ViewsTextBlock.Text = FormatViews(currentVideo.Engagement.ViewCount);
+
                 UpdateProgressStatus("Loading thumbnail...", 90);
                 _ = LoadThumbnailAsync(currentVideo.Thumbnails.GetWithHighestResolution().Url, cancellationToken);
 
-                // Update quality options based on available streams
-                UpdateQualityOptionsFromVideo();
+                UpdateQualityOptionsForFormat();
 
-                VideoInfoGroup.Visibility = Visibility.Visible;
-                DownloadButton.IsEnabled = true;
+                if (VideoInfoGroup != null)
+                    VideoInfoGroup.Visibility = Visibility.Visible;
+
+                if (DownloadButton != null)
+                    DownloadButton.IsEnabled = true;
+
                 UpdateProgressStatus("Video loaded successfully. Ready to download.", 100);
             }
             finally
@@ -271,9 +545,8 @@ namespace YouTubeDownloader
 
         private void UpdateQualityOptionsFromVideo()
         {
-            if (currentStreamManifest == null) return;
+            if (currentStreamManifest == null || QualityComboBox == null) return;
 
-            // Get actually available video qualities from the current video
             var availableQualities = currentStreamManifest.GetVideoOnlyStreams()
                 .Select(s => s.VideoQuality.Label)
                 .Distinct()
@@ -283,14 +556,12 @@ namespace YouTubeDownloader
             QualityComboBox.Items.Clear();
             QualityComboBox.Items.Add("🏆 Best Available");
 
-            // Only add qualities that are actually available for this video
             foreach (var quality in availableQualities)
             {
                 string emoji = GetQualityEmoji(quality);
                 QualityComboBox.Items.Add($"{emoji} {quality}");
             }
 
-            // Try to select the previously saved quality if available
             bool foundSavedQuality = false;
             for (int i = 0; i < QualityComboBox.Items.Count; i++)
             {
@@ -311,12 +582,12 @@ namespace YouTubeDownloader
         {
             return quality switch
             {
-                var q when q.Contains("4320") => "🌟", // 8K
-                var q when q.Contains("2160") => "🎬", // 4K
-                var q when q.Contains("1440") => "📹", // 2K
-                var q when q.Contains("1080") => "🎥", // Full HD
-                var q when q.Contains("720") => "📺",  // HD
-                _ => "📱" // Others
+                var q when q.Contains("4320") => "🌟",
+                var q when q.Contains("2160") => "🎬",
+                var q when q.Contains("1440") => "📹",
+                var q when q.Contains("1080") => "🎥",
+                var q when q.Contains("720") => "📺",
+                _ => "📱"
             };
         }
 
@@ -367,23 +638,39 @@ namespace YouTubeDownloader
                 bitmap.EndInit();
                 bitmap.Freeze();
 
-                Dispatcher.Invoke(() => ThumbnailImage.Source = bitmap);
+                Dispatcher.Invoke(() =>
+                {
+                    if (ThumbnailImage != null)
+                        ThumbnailImage.Source = bitmap;
+                });
             }
             catch (OperationCanceledException)
             {
-                // Ignore cancellation
             }
             catch
             {
-                Dispatcher.Invoke(() => ThumbnailImage.Source = null);
+                Dispatcher.Invoke(() =>
+                {
+                    if (ThumbnailImage != null)
+                        ThumbnailImage.Source = null;
+                });
             }
         }
 
         private void SetLoadingState(bool isLoading)
         {
-            PreviewButton.IsEnabled = !isLoading;
-            PreviewButton.Content = isLoading ? "🔄 Loading..." : "🔍 Preview";
-            DownloadButton.IsEnabled = !isLoading && VideoInfoGroup.Visibility == Visibility.Visible && currentVideo != null;
+            if (PreviewButton != null)
+            {
+                PreviewButton.IsEnabled = !isLoading;
+                PreviewButton.Content = isLoading ? "🔄 Loading..." : "🔍 Preview";
+            }
+
+            if (DownloadButton != null && SingleModeRadio != null && MultiModeRadio != null)
+            {
+                DownloadButton.IsEnabled = !isLoading &&
+                    ((SingleModeRadio.IsChecked == true && VideoInfoGroup?.Visibility == Visibility.Visible && currentVideo != null) ||
+                     (MultiModeRadio.IsChecked == true && downloadItems.Count(item => item.Status == "Ready") > 0));
+            }
         }
 
         private void BrowseButton_Click(object sender, RoutedEventArgs e)
@@ -391,34 +678,48 @@ namespace YouTubeDownloader
             SelectOutputFolder();
         }
 
-        private async void DownloadButton_Click(object sender, RoutedEventArgs e)
+        private void OpenFolderButton_Click(object sender, RoutedEventArgs e)
         {
-            if (isDownloading || currentVideo == null || currentStreamManifest == null) return;
-
-            // Ensure output folder exists before downloading
-            string outputDir = OutputPathTextBox.Text;
-            if (string.IsNullOrEmpty(outputDir))
-            {
-                WpfMessageBox.Show("Please select an output folder first.", "No Output Folder",
-                    MessageBoxButton.OK, MessageBoxImage.Warning);
-                SelectOutputFolder();
-                return;
-            }
-
             try
             {
-                // Create output directory if it doesn't exist
-                Directory.CreateDirectory(outputDir);
+                string folderPath = OutputPathTextBox?.Text ?? "";
+                if (Directory.Exists(folderPath))
+                {
+                    Process.Start("explorer.exe", folderPath);
+                }
+                else
+                {
+                    WpfMessageBox.Show("Output folder does not exist.", "Folder Not Found",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
             }
             catch (Exception ex)
             {
-                WpfMessageBox.Show($"Cannot create output folder: {ex.Message}", "Folder Error",
+                WpfMessageBox.Show($"Error opening folder: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
             }
+        }
 
-            // Save user preferences
+        private async void DownloadButton_Click(object sender, RoutedEventArgs e)
+        {
             SaveUserPreferences();
+
+            if (SingleModeRadio?.IsChecked == true)
+            {
+                await HandleSingleDownload();
+            }
+            else
+            {
+                await HandleMultipleDownloads();
+            }
+        }
+
+        private async Task HandleSingleDownload()
+        {
+            if (isDownloading || currentVideo == null || currentStreamManifest == null) return;
+
+            string outputDir = OutputPathTextBox?.Text ?? "";
+            if (!EnsureOutputFolder(outputDir)) return;
 
             try
             {
@@ -445,11 +746,302 @@ namespace YouTubeDownloader
             }
         }
 
+        private async Task HandleMultipleDownloads()
+        {
+            if (isMultipleDownloading) return;
+
+            var readyItems = downloadItems.Where(item => item.Status == "Ready").ToList();
+            if (readyItems.Count == 0)
+            {
+                WpfMessageBox.Show("No videos ready for download. Please process URLs first.", "No Videos",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            string outputDir = OutputPathTextBox?.Text ?? "";
+            if (!EnsureOutputFolder(outputDir)) return;
+
+            try
+            {
+                isMultipleDownloading = true;
+                SetDownloadingState(true);
+
+                UpdateDownloadSemaphore();
+
+                var downloadTasks = readyItems.Select(item => DownloadSingleItemAsync(item, outputDir));
+                await Task.WhenAll(downloadTasks);
+
+                WpfMessageBox.Show($"All downloads completed! {readyItems.Count} videos downloaded.", "Success",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                UpdateOverallProgress();
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Multiple download error: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                isMultipleDownloading = false;
+                SetDownloadingState(false);
+            }
+        }
+
+        private async Task DownloadSingleItemAsync(DownloadItem item, string outputDir)
+        {
+            await downloadSemaphore.WaitAsync();
+
+            try
+            {
+                if (item.Video == null || item.StreamManifest == null) return;
+
+                item.Status = "Downloading";
+                item.Progress = 0;
+                item.OnPropertyChanged(nameof(item.Status));
+                item.OnPropertyChanged(nameof(item.Progress));
+
+                string selectedFormat = item.Format;
+                string selectedQuality = item.Quality;
+
+                if (selectedFormat.Contains("Audio Only"))
+                {
+                    await DownloadAudioOnlyMultiple(item, item.StreamManifest, outputDir, selectedFormat, selectedQuality);
+                }
+                else
+                {
+                    await DownloadVideoMultiple(item, item.StreamManifest, outputDir, selectedQuality);
+                }
+
+                item.Status = "Completed";
+                item.Progress = 100;
+                item.OnPropertyChanged(nameof(item.Status));
+                item.OnPropertyChanged(nameof(item.Progress));
+            }
+            catch (Exception ex)
+            {
+                item.Status = $"Error: {ex.Message[..Math.Min(ex.Message.Length, 30)]}...";
+                item.Progress = 0;
+                item.OnPropertyChanged(nameof(item.Status));
+                item.OnPropertyChanged(nameof(item.Progress));
+            }
+            finally
+            {
+                downloadSemaphore.Release();
+                Dispatcher.Invoke(UpdateOverallProgress);
+            }
+        }
+
+        private async Task DownloadVideoMultiple(DownloadItem item, StreamManifest streamManifest, string outputDir, string selectedQuality)
+        {
+            if (item.Video == null) return;
+
+            IVideoStreamInfo videoStream;
+
+            if (selectedQuality.Contains("Best Available"))
+            {
+                videoStream = streamManifest.GetVideoOnlyStreams().GetWithHighestVideoQuality();
+            }
+            else if (selectedQuality.Contains("kbps"))
+            {
+                videoStream = streamManifest.GetVideoOnlyStreams().GetWithHighestVideoQuality();
+            }
+            else
+            {
+                string qualityLabel = selectedQuality.Split(' ').Last();
+                videoStream = streamManifest.GetVideoOnlyStreams()
+                    .Where(s => s.VideoQuality.Label == qualityLabel)
+                    .OrderByDescending(s => s.Bitrate)
+                    .FirstOrDefault() ?? streamManifest.GetVideoOnlyStreams().GetWithHighestVideoQuality();
+            }
+
+            var audioStream = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
+
+            string safeTitle = SanitizeFileName(item.Video.Title);
+            string tempVideoPath = Path.Combine(Path.GetTempPath(), $"{item.Video.Id}_video.{videoStream.Container}");
+            string tempAudioPath = Path.Combine(Path.GetTempPath(), $"{item.Video.Id}_audio.{audioStream.Container}");
+            string outputFilePath = Path.Combine(outputDir, $"{safeTitle}.mp4");
+
+            try
+            {
+                await DownloadStreamWithProgress(videoStream, tempVideoPath, item, 0, 40);
+                await DownloadStreamWithProgress(audioStream, tempAudioPath, item, 40, 70);
+
+                item.Progress = 75;
+                item.OnPropertyChanged(nameof(item.Progress));
+
+                await FFMpegArguments
+                    .FromFileInput(tempVideoPath)
+                    .AddFileInput(tempAudioPath)
+                    .OutputToFile(outputFilePath, true, options => options
+                        .WithVideoCodec(VideoCodec.LibX264)
+                        .WithAudioCodec("aac")
+                        .WithVariableBitrate(4)
+                        .WithFastStart())
+                    .ProcessAsynchronously();
+
+                item.Progress = 95;
+                item.OnPropertyChanged(nameof(item.Progress));
+            }
+            finally
+            {
+                CleanupTempFiles(tempVideoPath, tempAudioPath);
+            }
+        }
+
+        // FIXED CS0266: Proper handling without casting issues
+        private async Task DownloadAudioOnlyMultiple(DownloadItem item, StreamManifest streamManifest, string outputDir, string selectedFormat, string selectedQuality)
+        {
+            if (item.Video == null) return;
+
+            // Get all audio streams as a list to avoid LINQ casting issues
+            var audioStreamsList = streamManifest.GetAudioOnlyStreams().ToList();
+            IAudioStreamInfo audioStream;
+
+            if (selectedQuality.Contains("kbps"))
+            {
+                string bitrateStr = selectedQuality.Split(' ')[1];
+                if (double.TryParse(bitrateStr, out double targetBitrate))
+                {
+                    // Find closest bitrate using direct list access
+                    IAudioStreamInfo? closestStream = null;
+                    double closestDifference = double.MaxValue;
+
+                    foreach (var stream in audioStreamsList)
+                    {
+                        double difference = Math.Abs(stream.Bitrate.KiloBitsPerSecond - targetBitrate);
+                        if (difference < closestDifference)
+                        {
+                            closestDifference = difference;
+                            closestStream = stream;
+                        }
+                    }
+
+                    audioStream = closestStream ?? audioStreamsList.OrderByDescending(s => s.Bitrate).First();
+                }
+                else
+                {
+                    audioStream = audioStreamsList.OrderByDescending(s => s.Bitrate).First();
+                }
+            }
+            else
+            {
+                audioStream = audioStreamsList.OrderByDescending(s => s.Bitrate).First();
+            }
+
+            string audioFormat = selectedFormat.Split('-')[1].Trim().ToLower();
+            string safeTitle = SanitizeFileName(item.Video.Title);
+            string tempAudioPath = Path.Combine(Path.GetTempPath(), $"{item.Video.Id}_audio.{audioStream.Container}");
+            string outputFilePath = Path.Combine(outputDir, $"{safeTitle}.{audioFormat}");
+
+            try
+            {
+                await DownloadStreamWithProgress(audioStream, tempAudioPath, item, 0, 60);
+
+                item.Progress = 70;
+                item.OnPropertyChanged(nameof(item.Progress));
+
+                await FFMpegArguments
+                    .FromFileInput(tempAudioPath)
+                    .OutputToFile(outputFilePath, true, options => options
+                        .WithAudioCodec(GetAudioCodec(audioFormat))
+                        .WithVariableBitrate(4))
+                    .ProcessAsynchronously();
+
+                item.Progress = 95;
+                item.OnPropertyChanged(nameof(item.Progress));
+            }
+            finally
+            {
+                CleanupTempFiles(tempAudioPath);
+            }
+        }
+
+        private static async Task DownloadStreamWithProgress(IStreamInfo streamInfo, string filePath, DownloadItem item, double startProgress, double endProgress)
+        {
+            using var httpClient = new HttpClient();
+            using var response = await httpClient.GetAsync(streamInfo.Url, HttpCompletionOption.ResponseHeadersRead);
+            using var contentStream = await response.Content.ReadAsStreamAsync();
+            using var fileStream = File.Create(filePath);
+
+            var streamBytes = response.Content.Headers.ContentLength ?? 0;
+            var buffer = new byte[8192];
+            long streamDownloaded = 0;
+            int bytesRead;
+
+            while ((bytesRead = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+                streamDownloaded += bytesRead;
+
+                if (streamBytes > 0)
+                {
+                    double streamProgress = (double)streamDownloaded / streamBytes;
+                    double overallProgress = startProgress + (streamProgress * (endProgress - startProgress));
+
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        item.Progress = overallProgress;
+                        item.OnPropertyChanged(nameof(item.Progress));
+                    });
+                }
+            }
+        }
+
+        private void UpdateOverallProgress()
+        {
+            int total = downloadItems.Count;
+            int completed = downloadItems.Count(item => item.Status == "Completed");
+            int failed = downloadItems.Count(item => item.Status.StartsWith("Error"));
+            int inProgress = downloadItems.Count(item => item.Status == "Downloading");
+
+            if (OverallProgressLabel != null)
+            {
+                string statusText = $"Overall Progress: {completed}/{total} completed";
+                if (inProgress > 0) statusText += $", {inProgress} downloading";
+                if (failed > 0) statusText += $", {failed} failed";
+                OverallProgressLabel.Text = statusText;
+            }
+
+            double totalProgress = downloadItems.Sum(item => item.Progress);
+            double percentage = total > 0 ? totalProgress / total : 0;
+
+            if (OverallProgressBar != null)
+                OverallProgressBar.Value = percentage;
+
+            if (OverallProgressPercentage != null)
+                OverallProgressPercentage.Text = $"{percentage:F0}%";
+        }
+
+        private bool EnsureOutputFolder(string outputDir)
+        {
+            if (string.IsNullOrEmpty(outputDir))
+            {
+                WpfMessageBox.Show("Please select an output folder first.", "No Output Folder",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                SelectOutputFolder();
+                return false;
+            }
+
+            try
+            {
+                Directory.CreateDirectory(outputDir);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Cannot create output folder: {ex.Message}", "Folder Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
         private void SaveUserPreferences()
         {
             appSettings.LastSelectedQuality = GetSelectedComboBoxText(QualityComboBox);
             appSettings.LastSelectedFormat = GetSelectedComboBoxText(FormatComboBox);
-            appSettings.OutputFolder = OutputPathTextBox.Text;
+            appSettings.OutputFolder = OutputPathTextBox?.Text ?? "";
+            appSettings.MaxSimultaneousDownloads = (MaxDownloadsComboBox?.SelectedIndex ?? 1) + 1;
+            appSettings.IsMultipleMode = MultiModeRadio?.IsChecked == true;
             appSettings.Save();
         }
 
@@ -476,16 +1068,19 @@ namespace YouTubeDownloader
             downloadStartTime = DateTime.Now;
             totalBytes = 0;
             downloadedBytes = 0;
-            SpeedLabel.Text = "Speed: Calculating...";
-            SizeLabel.Text = "Size: Calculating...";
-            EtaLabel.Text = "ETA: Calculating...";
+            downloadHistory.Clear();
+
+            if (SpeedLabel != null) SpeedLabel.Text = "Speed: Calculating...";
+            if (SizeLabel != null) SizeLabel.Text = "Size: Calculating...";
+            if (EtaLabel != null) EtaLabel.Text = "ETA: Calculating...";
         }
 
         private void ResetDownloadTracking()
         {
-            SpeedLabel.Text = "Speed: --";
-            SizeLabel.Text = "Size: --";
-            EtaLabel.Text = "ETA: --";
+            downloadHistory.Clear();
+            if (SpeedLabel != null) SpeedLabel.Text = "Speed: --";
+            if (SizeLabel != null) SizeLabel.Text = "Size: --";
+            if (EtaLabel != null) EtaLabel.Text = "ETA: --";
         }
 
         private void UpdateDownloadProgress(long bytesDownloaded, long totalFileSize)
@@ -493,20 +1088,49 @@ namespace YouTubeDownloader
             downloadedBytes = bytesDownloaded;
             if (totalBytes == 0) totalBytes = totalFileSize;
 
-            var elapsed = DateTime.Now - downloadStartTime;
-            if (elapsed.TotalSeconds > 0)
+            var now = DateTime.Now;
+            downloadHistory.Enqueue((now, downloadedBytes));
+
+            while (downloadHistory.Count > 0 && (now - downloadHistory.Peek().Time).TotalSeconds > HistoryWindowSeconds)
             {
-                double speed = downloadedBytes / elapsed.TotalSeconds; // bytes per second
-                double speedMBps = speed / (1024 * 1024); // MB per second
+                downloadHistory.Dequeue();
+            }
 
-                SpeedLabel.Text = speedMBps > 1 ? $"Speed: {speedMBps:F1} MB/s" : $"Speed: {speed / 1024:F1} KB/s";
-                SizeLabel.Text = $"Size: {FormatBytes(downloadedBytes)}/{FormatBytes(totalBytes)}";
+            if (downloadHistory.Count >= 2)
+            {
+                var (oldestTime, oldestBytes) = downloadHistory.First();
+                var (newestTime, newestBytes) = downloadHistory.Last();
 
-                if (speed > 0 && totalBytes > downloadedBytes)
+                var timeSpan = newestTime - oldestTime;
+                var bytesInWindow = newestBytes - oldestBytes;
+
+                if (timeSpan.TotalSeconds > 0 && bytesInWindow > 0)
                 {
-                    double remainingSeconds = (totalBytes - downloadedBytes) / speed;
-                    EtaLabel.Text = $"ETA: {FormatTime(TimeSpan.FromSeconds(remainingSeconds))}";
+                    double speed = bytesInWindow / timeSpan.TotalSeconds;
+                    double speedMBps = speed / (1024 * 1024);
+
+                    if (SpeedLabel != null)
+                        SpeedLabel.Text = speedMBps > 1 ? $"Speed: {speedMBps:F1} MB/s" : $"Speed: {speed / 1024:F1} KB/s";
+
+                    if (totalBytes > downloadedBytes && speed > 0)
+                    {
+                        double remainingSeconds = (totalBytes - downloadedBytes) / speed;
+                        if (EtaLabel != null)
+                            EtaLabel.Text = $"ETA: {FormatTime(TimeSpan.FromSeconds(remainingSeconds))}";
+                    }
+                    else
+                    {
+                        if (EtaLabel != null)
+                            EtaLabel.Text = "ETA: Almost done";
+                    }
                 }
+            }
+
+            if (SizeLabel != null)
+            {
+                SizeLabel.Text = totalBytes > 0 ?
+                    $"Size: {FormatBytes(downloadedBytes)}/{FormatBytes(totalBytes)}" :
+                    $"Size: {FormatBytes(downloadedBytes)}";
             }
         }
 
@@ -533,13 +1157,13 @@ namespace YouTubeDownloader
                 return $"{timeSpan.Seconds}s";
         }
 
-        private static string GetSelectedComboBoxText(System.Windows.Controls.ComboBox comboBox)
+        private static string GetSelectedComboBoxText(System.Windows.Controls.ComboBox? comboBox)
         {
-            if (comboBox.SelectedItem is System.Windows.Controls.ComboBoxItem item)
+            if (comboBox?.SelectedItem is System.Windows.Controls.ComboBoxItem item)
             {
                 return item.Content?.ToString() ?? "";
             }
-            return comboBox.SelectedItem?.ToString() ?? "";
+            return comboBox?.SelectedItem?.ToString() ?? "";
         }
 
         private async Task DownloadVideo(string selectedQuality)
@@ -548,7 +1172,6 @@ namespace YouTubeDownloader
 
             try
             {
-                // Get the best video and audio streams
                 IVideoStreamInfo videoStream;
 
                 if (selectedQuality.Contains("Best Available"))
@@ -566,25 +1189,20 @@ namespace YouTubeDownloader
 
                 var audioStream = currentStreamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
-                // Create file paths
                 string safeTitle = SanitizeFileName(currentVideo.Title);
-                string outputDir = OutputPathTextBox.Text;
+                string outputDir = OutputPathTextBox?.Text ?? "";
                 string tempVideoPath = Path.Combine(Path.GetTempPath(), $"{currentVideo.Id}_video.{videoStream.Container}");
                 string tempAudioPath = Path.Combine(Path.GetTempPath(), $"{currentVideo.Id}_audio.{audioStream.Container}");
                 string outputFilePath = Path.Combine(outputDir, $"{safeTitle}.mp4");
 
-                // Fixed: Calculate total size for progress tracking - FileSize is struct, not nullable
                 totalBytes = videoStream.Size.Bytes + audioStream.Size.Bytes;
 
-                // Download video stream with progress tracking
                 UpdateProgressStatus("Downloading video stream...", 20);
-                await DownloadWithProgress(videoStream, tempVideoPath, 0.6); // 60% of total progress
+                await DownloadWithProgress(videoStream, tempVideoPath, 0.6);
 
-                // Download audio stream with progress tracking
                 UpdateProgressStatus("Downloading audio stream...", 70);
-                await DownloadWithProgress(audioStream, tempAudioPath, 0.9); // 90% of total progress
+                await DownloadWithProgress(audioStream, tempAudioPath, 0.9);
 
-                // Merge video and audio using FFmpeg
                 UpdateProgressStatus("Merging video and audio...", 90);
                 await FFMpegArguments
                     .FromFileInput(tempVideoPath)
@@ -596,7 +1214,6 @@ namespace YouTubeDownloader
                         .WithFastStart())
                     .ProcessAsynchronously();
 
-                // Clean up temp files
                 UpdateProgressStatus("Cleaning up...", 95);
                 CleanupTempFiles(tempVideoPath, tempAudioPath);
 
@@ -616,22 +1233,18 @@ namespace YouTubeDownloader
             {
                 var audioStream = currentStreamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
-                // Extract audio format from selection
                 string audioFormat = selectedFormat.Split('-')[1].Trim().ToLower();
                 string safeTitle = SanitizeFileName(currentVideo.Title);
-                string outputDir = OutputPathTextBox.Text;
+                string outputDir = OutputPathTextBox?.Text ?? "";
 
                 string tempAudioPath = Path.Combine(Path.GetTempPath(), $"{currentVideo.Id}_audio.{audioStream.Container}");
                 string outputFilePath = Path.Combine(outputDir, $"{safeTitle}.{audioFormat}");
 
-                // Fixed: Set total size for progress tracking - FileSize is struct, not nullable
                 totalBytes = audioStream.Size.Bytes;
 
-                // Download audio stream with progress tracking
                 UpdateProgressStatus("Downloading audio stream...", 30);
-                await DownloadWithProgress(audioStream, tempAudioPath, 0.7); // 70% of total progress
+                await DownloadWithProgress(audioStream, tempAudioPath, 0.7);
 
-                // Convert to desired format using FFmpeg
                 UpdateProgressStatus($"Converting to {audioFormat.ToUpper()}...", 80);
                 await FFMpegArguments
                     .FromFileInput(tempAudioPath)
@@ -640,7 +1253,6 @@ namespace YouTubeDownloader
                         .WithVariableBitrate(4))
                     .ProcessAsynchronously();
 
-                // Clean up temp file
                 UpdateProgressStatus("Cleaning up...", 95);
                 CleanupTempFiles(tempAudioPath);
 
@@ -664,27 +1276,23 @@ namespace YouTubeDownloader
             long streamDownloaded = 0;
             int bytesRead;
 
-            var streamStartTime = DateTime.Now;
-
             while ((bytesRead = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length))) > 0)
             {
                 await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead));
                 streamDownloaded += bytesRead;
 
-                // Update progress tracking
-                var elapsed = DateTime.Now - streamStartTime;
-                if (elapsed.TotalSeconds > 0)
-                {
-                    UpdateDownloadProgress(streamDownloaded, streamBytes);
-                }
+                UpdateDownloadProgress(streamDownloaded, streamBytes);
 
-                // Update overall progress bar
                 if (streamBytes > 0)
                 {
                     double streamProgress = (double)streamDownloaded / streamBytes;
                     double overallProgress = streamProgress * progressWeight * 100;
-                    ProgressBar.Value = Math.Min(overallProgress, progressWeight * 100);
-                    ProgressPercentage.Text = $"{overallProgress:F0}%";
+
+                    if (ProgressBar != null)
+                        ProgressBar.Value = Math.Min(overallProgress, progressWeight * 100);
+
+                    if (ProgressPercentage != null)
+                        ProgressPercentage.Text = $"{overallProgress:F0}%";
                 }
             }
         }
@@ -700,7 +1308,6 @@ namespace YouTubeDownloader
                 }
                 catch
                 {
-                    // Ignore cleanup errors
                 }
             }
         }
@@ -722,30 +1329,52 @@ namespace YouTubeDownloader
             var invalidChars = Path.GetInvalidFileNameChars();
             var sanitized = string.Concat(fileName.Where(c => !invalidChars.Contains(c)));
 
-            // Remove extra spaces and limit length
-            sanitized = SpaceRegex.Replace(sanitized, " ").Trim(); // Remove () from SpaceRegex()
+            sanitized = SpaceRegex.Replace(sanitized, " ").Trim();
             if (sanitized.Length > 100)
                 sanitized = sanitized[..100];
 
             return sanitized;
         }
 
-
         private void SetDownloadingState(bool isDownloading)
         {
-            DownloadButton.IsEnabled = !isDownloading;
-            DownloadButton.Content = isDownloading ? "⏳ Downloading..." : "⬇️ Download";
-            PreviewButton.IsEnabled = !isDownloading;
-            BrowseButton.IsEnabled = !isDownloading;
-            QualityComboBox.IsEnabled = !isDownloading;
-            FormatComboBox.IsEnabled = !isDownloading;
+            bool downloading = isDownloading || isMultipleDownloading;
+
+            if (DownloadButton != null)
+            {
+                DownloadButton.IsEnabled = !downloading;
+                DownloadButton.Content = downloading ? "⏳ Downloading..." : "⬇️ Download";
+            }
+
+            if (PreviewButton != null)
+                PreviewButton.IsEnabled = !downloading;
+
+            if (ProcessUrlsButton != null)
+                ProcessUrlsButton.IsEnabled = !downloading;
+
+            if (BrowseButton != null)
+                BrowseButton.IsEnabled = !downloading;
+
+            if (QualityComboBox != null)
+                QualityComboBox.IsEnabled = !downloading;
+
+            if (FormatComboBox != null)
+                FormatComboBox.IsEnabled = !downloading;
+
+            if (MaxDownloadsComboBox != null)
+                MaxDownloadsComboBox.IsEnabled = !downloading;
         }
 
         private void UpdateProgressStatus(string message, double progress)
         {
-            ProgressLabel.Text = message;
-            ProgressBar.Value = progress;
-            ProgressPercentage.Text = $"{progress:F0}%";
+            if (ProgressLabel != null)
+                ProgressLabel.Text = message;
+
+            if (ProgressBar != null)
+                ProgressBar.Value = progress;
+
+            if (ProgressPercentage != null)
+                ProgressPercentage.Text = $"{progress:F0}%";
         }
 
         private void ResetProgressStatus(string message)
@@ -756,15 +1385,99 @@ namespace YouTubeDownloader
 
         private static bool IsValidYouTubeUrl(string url)
         {
-            return url.Contains("youtube.com/watch") || url.Contains("youtu.be/") ||
-                   url.Contains("youtube.com/embed/") || url.Contains("youtube.com/v/");
+            return url.Contains("youtube.com/watch") ||
+                   url.Contains("youtu.be/") ||
+                   url.Contains("youtube.com/embed/") ||
+                   url.Contains("youtube.com/v/") ||
+                   url.Contains("youtube.com/shorts/") ||  // Add support for Shorts
+                   url.Contains("m.youtube.com/watch") ||  // Mobile URLs
+                   url.Contains("youtube.com/live/");      // Live streams
         }
+
+        private static string NormalizeYouTubeUrl(string url)
+        {
+            try
+            {
+                // Handle YouTube Shorts URLs
+                if (url.Contains("youtube.com/shorts/"))
+                {
+                    var shortsMatch = System.Text.RegularExpressions.Regex.Match(url, @"youtube\.com/shorts/([a-zA-Z0-9_-]{11})");
+                    if (shortsMatch.Success)
+                    {
+                        string videoId = shortsMatch.Groups[1].Value;
+                        return $"https://www.youtube.com/watch?v={videoId}";
+                    }
+                }
+
+                // Handle youtu.be URLs
+                if (url.Contains("youtu.be/"))
+                {
+                    var shortMatch = System.Text.RegularExpressions.Regex.Match(url, @"youtu\.be/([a-zA-Z0-9_-]{11})");
+                    if (shortMatch.Success)
+                    {
+                        string videoId = shortMatch.Groups[1].Value;
+                        return $"https://www.youtube.com/watch?v={videoId}";
+                    }
+                }
+
+                // Handle mobile URLs
+                if (url.Contains("m.youtube.com/watch"))
+                {
+                    return url.Replace("m.youtube.com", "www.youtube.com");
+                }
+
+                // Return original URL if it's already in standard format
+                return url;
+            }
+            catch
+            {
+                return url; // Return original if parsing fails
+            }
+        }
+
+
+        // Add this method to MainWindow.xaml.cs
+
+        // Add these methods to your MainWindow.xaml.cs
+
+        private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+        {
+            try
+            {
+                // Open the URL in the default browser
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = e.Uri.AbsoluteUri,
+                    UseShellExecute = true
+                });
+                e.Handled = true;
+            }
+            catch (Exception ex)
+            {
+                WpfMessageBox.Show($"Unable to open link: {ex.Message}", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+      
+
+
+        private void QualityComboBox_DropDownOpened(object sender, EventArgs e)
+        {
+            if (sender is System.Windows.Controls.ComboBox comboBox)
+            {
+                // Ensure dropdown is wide enough to show full text
+                comboBox.SetValue(System.Windows.Controls.ComboBox.MinWidthProperty, 280.0);
+            }
+        }
+
 
         protected override void OnClosed(EventArgs e)
         {
             cancellationTokenSource?.Cancel();
             cancellationTokenSource?.Dispose();
             httpClient?.Dispose();
+            downloadSemaphore?.Dispose();
             base.OnClosed(e);
         }
     }

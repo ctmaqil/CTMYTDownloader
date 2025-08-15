@@ -1,9 +1,9 @@
 ﻿<Window x:Class="YouTubeDownloader.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="YouTube Video Downloader" Height="750" Width="900"
+        Title="CTM YT Downloader - Version 1" Height="900" Width="1000"
         ResizeMode="CanResize" WindowStartupLocation="CenterScreen"
-        Background="#F8F9FA" MinHeight="600" MinWidth="700">
+        Background="#F8F9FA" MinHeight="750" MinWidth="800" >
 
     <Window.Resources>
         <!-- Button Styles -->
@@ -91,7 +91,45 @@
             </Setter>
         </Style>
 
-        <!-- Simplified ComboBox Style with Centered Text -->
+        <Style x:Key="InfoButton" TargetType="Button">
+            <Setter Property="Background" Value="#17A2B8"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" 
+                                CornerRadius="4" 
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                            VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#138496"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Footer Link Style -->
+        <Style x:Key="FooterLinkStyle" TargetType="Hyperlink">
+            <Setter Property="Foreground" Value="#007BFF"/>
+            <Setter Property="TextDecorations" Value="None"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#0056B3"/>
+                    <Setter Property="TextDecorations" Value="Underline"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ComboBox Style -->
         <Style TargetType="ComboBox">
             <Setter Property="BorderBrush" Value="#CED4DA"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -113,195 +151,393 @@
         </Style>
     </Window.Resources>
 
-    <!-- Main Scrollable Container -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="25">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+    <!-- Main Grid with Footer -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-            <!-- Header -->
-            <StackPanel Grid.Row="0" Margin="0,0,0,25">
-                <TextBlock Text="YouTube Downloader" FontSize="24" FontWeight="Bold" 
-                           Foreground="#495057" HorizontalAlignment="Center"/>
-                <TextBlock 
-                           FontSize="12" Foreground="#6C757D" HorizontalAlignment="Center" 
-                           Margin="0,5,0,0"><Run Text="Download videos in high quality including 4K, 8K and extract audio"/><LineBreak/><Run/></TextBlock>
-                <TextBlock 
-           FontSize="12" Foreground="#6C757D" HorizontalAlignment="Center" 
-           Margin="0,5,0,0"><Run Text="Created by CTMAQIL - ctmstudios.org"/><LineBreak/><Run/></TextBlock>
-            </StackPanel>
+        <!-- Main Content Scrollable Container -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid Margin="25">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-            <!-- URL Input Section -->
-            <GroupBox Grid.Row="1" Header="Video URL">
-                <StackPanel>
+                <!-- Header -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,25">
+                    <TextBlock Text="CTM YT Downloader" FontSize="28" FontWeight="Bold" 
+                               Foreground="#495057" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Download single or multiple videos in high quality including 4K, 8K and extract audio" 
+                               FontSize="13" Foreground="#6C757D" HorizontalAlignment="Center" 
+                               Margin="0,5,0,0"/>
+                </StackPanel>
+
+                <!-- Mode Selection -->
+                <GroupBox Grid.Row="1" Header="Download Mode">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                        <RadioButton x:Name="SingleModeRadio" Content="Single Video" IsChecked="True" 
+                                     Margin="0,0,30,0" FontSize="12" Checked="ModeRadio_Checked"/>
+                        <RadioButton x:Name="MultiModeRadio" Content="Multiple Videos" 
+                                     FontSize="12" Checked="ModeRadio_Checked"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Single Video Mode -->
+                <GroupBox x:Name="SingleVideoGroup" Grid.Row="2" Header="Single Video URL">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBox x:Name="UrlTextBox" Grid.Column="0" Height="40" 
+                                     VerticalContentAlignment="Center" Margin="0,0,15,0"
+                                     FontSize="12" BorderBrush="#CED4DA" BorderThickness="1" Padding="8"/>
+
+                            <Button x:Name="PreviewButton" Grid.Column="1" Content="🔍 Preview" 
+                                    Width="120" Height="40" Style="{StaticResource PrimaryButton}"
+                                    FontSize="12" Click="PreviewButton_Click"/>
+                        </Grid>
+
+                        <TextBlock Text="Paste any YouTube video URL or Shorts URL above to get started" 
+                                   FontSize="10" Foreground="#6C757D" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Multiple Videos Mode -->
+                <GroupBox x:Name="MultipleVideoGroup" Grid.Row="2" Header="Multiple Video URLs" Visibility="Collapsed">
                     <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                        <TextBox x:Name="UrlTextBox" Grid.Column="0" Height="40" 
-                                 VerticalContentAlignment="Center" Margin="0,0,15,0"
+                        <TextBox x:Name="MultipleUrlsTextBox" Grid.Row="0" Height="120" 
+                                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                                 TextWrapping="Wrap" VerticalContentAlignment="Top"
                                  FontSize="12" BorderBrush="#CED4DA" BorderThickness="1" Padding="8"/>
 
-                        <Button x:Name="PreviewButton" Grid.Column="1" Content="🔍 Preview" 
-                                Width="120" Height="40" Style="{StaticResource PrimaryButton}"
-                                FontSize="12" Click="PreviewButton_Click"/>
-                    </Grid>
+                        <TextBlock Grid.Row="1" Text="Enter multiple YouTube URLs including Shorts (one per line). Maximum 20 videos." 
+                                   FontSize="10" Foreground="#6C757D" Margin="0,8,0,8"/>
 
-                    <TextBlock Text="Paste any YouTube video URL above to get started" 
-                               FontSize="10" Foreground="#6C757D" Margin="0,8,0,0"/>
-                </StackPanel>
-            </GroupBox>
-
-            <!-- Video Info Section -->
-            <GroupBox x:Name="VideoInfoGroup" Grid.Row="2" Header="📹 Video Information" 
-                      Visibility="Collapsed">
-                <Grid Height="160">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="220"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Thumbnail -->
-                    <Border Grid.Column="0" BorderBrush="#DEE2E6" BorderThickness="1" 
-                            CornerRadius="4">
-                        <Image x:Name="ThumbnailImage" Stretch="UniformToFill"/>
-                    </Border>
-
-                    <!-- Video Details -->
-                    <StackPanel Grid.Column="1" Margin="20,0,0,0">
-                        <TextBlock Text="Title:" FontWeight="SemiBold" FontSize="11" 
-                                   Foreground="#495057"/>
-                        <TextBlock x:Name="TitleTextBlock" FontSize="13" FontWeight="SemiBold" 
-                                   TextWrapping="Wrap" Height="60" Margin="0,5,0,10"
-                                   Text="Video title will appear here..."
-                                   Foreground="#212529"/>
-
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <StackPanel Grid.Column="0" Margin="0,0,20,0">
-                                <TextBlock Text="Duration:" FontSize="10" Foreground="#6C757D"/>
-                                <TextBlock x:Name="DurationTextBlock" FontSize="12" FontWeight="SemiBold"
-                                           Text="--:--" Foreground="#495057"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="Views:" FontSize="10" Foreground="#6C757D"/>
-                                <TextBlock x:Name="ViewsTextBlock" FontSize="12" FontWeight="SemiBold"
-                                           Text="--" Foreground="#495057"/>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Grid>
-            </GroupBox>
-
-            <!-- Download Settings -->
-            <GroupBox Grid.Row="3" Header="⚙️ Download Settings">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-
-                    <!-- Quality and Format Row -->
-                    <Grid Grid.Row="0" Margin="0,0,0,20">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="15"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="15"/>
-                            <ColumnDefinition Width="180"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Quality Selection -->
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Quality:" FontWeight="SemiBold" FontSize="11" 
-                                       Margin="0,0,0,5"/>
-                            <ComboBox x:Name="QualityComboBox" Height="35"/>
-                        </StackPanel>
-
-                        <!-- Format Selection -->
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="Format:" FontWeight="SemiBold" FontSize="11" 
-                                       Margin="0,0,0,5"/>
-                            <ComboBox x:Name="FormatComboBox" Height="35">
-                                <ComboBoxItem Content="🎬 Video - MP4 (H264)" IsSelected="True"/>
-                                <ComboBoxItem Content="🎵 Audio Only - MP3"/>
-                                <ComboBoxItem Content="🎵 Audio Only - WAV"/>
-                                <ComboBoxItem Content="🎵 Audio Only - AAC"/>
-                                <ComboBoxItem Content="🎵 Audio Only - FLAC"/>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal">
+                            <TextBlock Text="Max simultaneous downloads:" VerticalAlignment="Center" 
+                                       FontSize="11" Margin="0,0,10,0"/>
+                            <ComboBox x:Name="MaxDownloadsComboBox" Width="80" Height="30">
+                                <ComboBoxItem Content="1"/>
+                                <ComboBoxItem Content="2" IsSelected="True"/>
+                                <ComboBoxItem Content="3"/>
+                                <ComboBoxItem Content="4"/>
+                                <ComboBoxItem Content="5"/>
                             </ComboBox>
+
+                            <Button x:Name="ProcessUrlsButton" Content="📋 Process URLs" 
+                                    Width="130" Height="30" Style="{StaticResource PrimaryButton}"
+                                    FontSize="11" Margin="20,0,0,0" Click="ProcessUrlsButton_Click"/>
                         </StackPanel>
-
-                        <!-- Download Button -->
-                        <Button x:Name="DownloadButton" Grid.Column="4" Content="⬇️ Download" 
-                                Height="50" Style="{StaticResource SuccessButton}" FontSize="14"
-                                Click="DownloadButton_Click" IsEnabled="False"/>
                     </Grid>
+                </GroupBox>
 
-                    <!-- Output Folder Row -->
-                    <StackPanel Grid.Row="1">
-                        <TextBlock Text="Output Folder:" FontWeight="SemiBold" FontSize="11" 
-                                   Margin="0,0,0,5"/>
-                        <Grid>
+                <!-- Video Info Section -->
+                <GroupBox x:Name="VideoInfoGroup" Grid.Row="3" Header="📹 Video Information" 
+                          Visibility="Collapsed">
+                    <Grid Height="180">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="240"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Thumbnail -->
+                        <Border Grid.Column="0" BorderBrush="#DEE2E6" BorderThickness="1" 
+                                CornerRadius="4">
+                            <Image x:Name="ThumbnailImage" Stretch="UniformToFill"/>
+                        </Border>
+
+                        <!-- Video Details -->
+                        <StackPanel Grid.Column="1" Margin="20,0,0,0">
+                            <TextBlock Text="Title:" FontWeight="SemiBold" FontSize="11" 
+                                       Foreground="#495057"/>
+                            <TextBlock x:Name="TitleTextBlock" FontSize="13" FontWeight="SemiBold" 
+                                       TextWrapping="Wrap" Height="80" Margin="0,5,0,10"
+                                       Text="Video title will appear here..."
+                                       Foreground="#212529"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                    <TextBlock Text="Duration:" FontSize="10" Foreground="#6C757D"/>
+                                    <TextBlock x:Name="DurationTextBlock" FontSize="12" FontWeight="SemiBold"
+                                               Text="--:--" Foreground="#495057"/>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Views:" FontSize="10" Foreground="#6C757D"/>
+                                    <TextBlock x:Name="ViewsTextBlock" FontSize="12" FontWeight="SemiBold"
+                                               Text="--" Foreground="#495057"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
+
+                <!-- Download Settings -->
+                <GroupBox Grid.Row="4" Header="⚙️ Download Settings">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Quality and Format Row -->
+                        <Grid Grid.Row="0" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="15"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="15"/>
+                                <ColumnDefinition Width="160"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Quality Selection -->
+                            <StackPanel Grid.Column="0">
+                                <TextBlock x:Name="QualityLabel" Text="Quality:" FontWeight="SemiBold" FontSize="11" 
+                                           Margin="0,0,0,5"/>
+                                <ComboBox x:Name="QualityComboBox" Height="35"/>
+                            </StackPanel>
+
+                            <!-- Format Selection -->
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Format:" FontWeight="SemiBold" FontSize="11" 
+                                           Margin="0,0,0,5"/>
+                                <ComboBox x:Name="FormatComboBox" Height="35" SelectionChanged="FormatComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="🎬 Video - MP4 (H264)" IsSelected="True"/>
+                                    <ComboBoxItem Content="🎵 Audio Only - MP3"/>
+                                    <ComboBoxItem Content="🎵 Audio Only - WAV"/>
+                                    <ComboBoxItem Content="🎵 Audio Only - AAC"/>
+                                    <ComboBoxItem Content="🎵 Audio Only - FLAC"/>
+                                </ComboBox>
+                            </StackPanel>
+
+                            <!-- Download Button -->
+                            <Button x:Name="DownloadButton" Grid.Column="4" Content="⬇️ Download" 
+                                    Height="50" Style="{StaticResource SuccessButton}" FontSize="14"
+                                    Click="DownloadButton_Click" IsEnabled="False"/>
+                        </Grid>
+
+                        <!-- Output Folder Row -->
+                        <StackPanel Grid.Row="1">
+                            <TextBlock Text="Output Folder:" FontWeight="SemiBold" FontSize="11" 
+                                       Margin="0,0,0,5"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="OutputPathTextBox" Grid.Column="0" Height="35" 
+                                         VerticalContentAlignment="Center" IsReadOnly="True"
+                                         Margin="0,0,10,0" BorderBrush="#CED4DA" Padding="8"/>
+                                <Button x:Name="BrowseButton" Grid.Column="1" Content="📁 Browse" 
+                                        Width="100" Height="35" Style="{StaticResource SecondaryButton}"
+                                        Margin="0,0,10,0" Click="BrowseButton_Click"/>
+                                <Button x:Name="OpenFolderButton" Grid.Column="2" Content="🗂️ Open" 
+                                        Width="80" Height="35" Style="{StaticResource InfoButton}"
+                                        Click="OpenFolderButton_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
+
+                <!-- Multiple Videos Progress -->
+                <GroupBox x:Name="MultipleProgressGroup" Grid.Row="5" Header="📊 Multiple Downloads Progress" Visibility="Collapsed">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox x:Name="OutputPathTextBox" Grid.Column="0" Height="35" 
-                                     VerticalContentAlignment="Center" IsReadOnly="True"
-                                     Margin="0,0,10,0" BorderBrush="#CED4DA" Padding="8"/>
-                            <Button x:Name="BrowseButton" Grid.Column="1" Content="📁 Browse" 
-                                    Width="100" Height="35" Style="{StaticResource SecondaryButton}"
-                                    Click="BrowseButton_Click"/>
+                            <TextBlock x:Name="OverallProgressLabel" Grid.Column="0" 
+                                       Text="Overall Progress: 0/0 completed" FontSize="12"/>
+                            <TextBlock x:Name="OverallProgressPercentage" Grid.Column="1" 
+                                       Text="0%" FontSize="12" FontWeight="SemiBold"/>
+                        </Grid>
+
+                        <ProgressBar x:Name="OverallProgressBar" Height="20" 
+                                     Background="#E9ECEF" Foreground="#007BFF"/>
+
+                        <ScrollViewer Height="280" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,10,0,0">
+                            <ListBox x:Name="DownloadStatusList" BorderThickness="0" Background="Transparent" MinWidth="800">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="10" Margin="0,3">
+                                            <Grid MinWidth="780">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <!-- Title Row -->
+                                                <TextBlock Grid.Row="0" Text="{Binding Title}" FontSize="12" FontWeight="SemiBold"
+                                                           TextWrapping="Wrap" TextTrimming="CharacterEllipsis" 
+                                                           Margin="0,0,0,10" MaxHeight="50"/>
+
+                                                <!-- Settings Row with Fixed Sizing -->
+                                                <Grid Grid.Row="1" Margin="0,0,0,12">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="60"/>
+                                                        <!-- Quality label -->
+                                                        <ColumnDefinition Width="280"/>
+                                                        <!-- Quality dropdown -->
+                                                        <ColumnDefinition Width="20"/>
+                                                        <!-- Spacer -->
+                                                        <ColumnDefinition Width="50"/>
+                                                        <!-- Format label -->
+                                                        <ColumnDefinition Width="280"/>
+                                                        <!-- Format dropdown -->
+                                                        <ColumnDefinition Width="*"/>
+                                                        <!-- Remaining space -->
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBlock Grid.Column="0" Text="Quality:" FontSize="11" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center"/>
+
+                                                    <!-- Quality Dropdown -->
+                                                    <ComboBox Grid.Column="1" 
+                                                              ItemsSource="{Binding AvailableQualities}"
+                                                              SelectedItem="{Binding Quality, Mode=TwoWay}"
+                                                              FontSize="10" Height="28" 
+                                                              HorizontalContentAlignment="Left"
+                                                              DropDownOpened="QualityComboBox_DropDownOpened">
+                                                        <ComboBox.ItemContainerStyle>
+                                                            <Style TargetType="ComboBoxItem">
+                                                                <Setter Property="MinWidth" Value="260"/>
+                                                                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                                                <Setter Property="Padding" Value="8,4"/>
+                                                            </Style>
+                                                        </ComboBox.ItemContainerStyle>
+                                                    </ComboBox>
+
+                                                    <TextBlock Grid.Column="3" Text="Format:" FontSize="11" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center"/>
+
+                                                    <!-- Format Dropdown -->
+                                                    <ComboBox Grid.Column="4" 
+                                                              ItemsSource="{Binding AvailableFormats}"
+                                                              SelectedItem="{Binding Format, Mode=TwoWay}"
+                                                              FontSize="10" Height="28"
+                                                              HorizontalContentAlignment="Left">
+                                                        <ComboBox.ItemContainerStyle>
+                                                            <Style TargetType="ComboBoxItem">
+                                                                <Setter Property="MinWidth" Value="260"/>
+                                                                <Setter Property="HorizontalContentAlignment" Value="Left"/>
+                                                                <Setter Property="Padding" Value="8,4"/>
+                                                            </Style>
+                                                        </ComboBox.ItemContainerStyle>
+                                                    </ComboBox>
+                                                </Grid>
+
+                                                <!-- Progress Row -->
+                                                <Grid Grid.Row="2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="120"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="70"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="11" 
+                                                               VerticalAlignment="Center" FontWeight="SemiBold"
+                                                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
+                                                    <ProgressBar Grid.Column="1" Height="18" 
+                                                                 Value="{Binding Progress}" Maximum="100" 
+                                                                 Margin="10,0,10,0"/>
+                                                    <TextBlock Grid.Column="2" FontSize="11" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center" HorizontalAlignment="Right">
+                                                        <TextBlock.Text>
+                                                            <Binding Path="Progress" StringFormat="{}{0:F0}%"/>
+                                                        </TextBlock.Text>
+                                                    </TextBlock>
+                                                </Grid>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </ScrollViewer>
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Single Download Progress -->
+                <GroupBox x:Name="SingleProgressGroup" Grid.Row="6" Header="📊 Download Progress">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ProgressLabel" Grid.Column="0" 
+                                       Text="Ready to download..." FontSize="12"/>
+                            <TextBlock x:Name="ProgressPercentage" Grid.Column="1" 
+                                       Text="0%" FontSize="12" FontWeight="SemiBold"/>
+                        </Grid>
+
+                        <ProgressBar x:Name="ProgressBar" Height="20" 
+                                     Background="#E9ECEF" Foreground="#28A745"/>
+
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="SpeedLabel" Grid.Column="0" Text="Speed: --" 
+                                       FontSize="10" Foreground="#6C757D"/>
+                            <TextBlock x:Name="SizeLabel" Grid.Column="1" Text="Size: --" 
+                                       FontSize="10" Foreground="#6C757D" TextAlignment="Center"/>
+                            <TextBlock x:Name="EtaLabel" Grid.Column="2" Text="ETA: --" 
+                                       FontSize="10" Foreground="#6C757D" TextAlignment="Right"/>
                         </Grid>
                     </StackPanel>
-                </Grid>
-            </GroupBox>
+                </GroupBox>
+            </Grid>
+        </ScrollViewer>
 
-            <!-- Progress Section -->
-            <GroupBox Grid.Row="4" Header="📊 Download Progress">
-                <StackPanel>
-                    <Grid Margin="0,0,0,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="ProgressLabel" Grid.Column="0" 
-                                   Text="Ready to download..." FontSize="12"/>
-                        <TextBlock x:Name="ProgressPercentage" Grid.Column="1" 
-                                   Text="0%" FontSize="12" FontWeight="SemiBold"/>
-                    </Grid>
+        <!-- Footer -->
+        <Border Grid.Row="1" Background="#343A40" Padding="15,10">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                <TextBlock FontSize="12" Foreground="#DEE2E6">
+                    <Hyperlink NavigateUri="https://ctmstudios.org" 
+                               RequestNavigate="Hyperlink_RequestNavigate"
+                               Style="{StaticResource FooterLinkStyle}">
+                        <Run Text="CTM STUDIOS" FontWeight="SemiBold"/>
+                    </Hyperlink>
+                </TextBlock>
 
-                    <ProgressBar x:Name="ProgressBar" Height="20" 
-                                 Background="#E9ECEF" Foreground="#28A745"/>
+                <TextBlock Text=" | " FontSize="12" Foreground="#6C757D" Margin="8,0"/>
 
-                    <Grid Margin="0,10,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="SpeedLabel" Grid.Column="0" Text="Speed: --" 
-                                   FontSize="10" Foreground="#6C757D"/>
-                        <TextBlock x:Name="SizeLabel" Grid.Column="1" Text="Size: --" 
-                                   FontSize="10" Foreground="#6C757D" TextAlignment="Center"/>
-                        <TextBlock x:Name="EtaLabel" Grid.Column="2" Text="ETA: --" 
-                                   FontSize="10" Foreground="#6C757D" TextAlignment="Right"/>
-                    </Grid>
-                </StackPanel>
-            </GroupBox>
-        </Grid>
-    </ScrollViewer>
+                <TextBlock FontSize="12" Foreground="#DEE2E6">
+                    <Hyperlink NavigateUri="https://github.com/ctmaqil/CTMYTDownloader" 
+                               RequestNavigate="Hyperlink_RequestNavigate"
+                               Style="{StaticResource FooterLinkStyle}">
+                        <Run Text="Version 1"/>
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+    </Grid>
 </Window>

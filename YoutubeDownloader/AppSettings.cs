@@ -9,6 +9,8 @@ namespace YouTubeDownloader
         public string OutputFolder { get; set; } = string.Empty;
         public string LastSelectedQuality { get; set; } = "Best Available";
         public string LastSelectedFormat { get; set; } = "Video - MP4 (H264)";
+        public int MaxSimultaneousDownloads { get; set; } = 2;
+        public bool IsMultipleMode { get; set; } = false;
 
         private static readonly string SettingsPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
