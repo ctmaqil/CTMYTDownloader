@@ -40,9 +40,9 @@ A professional, feature-rich YouTube video and Shorts downloader built with C# a
 
 ###  Download Release (Recommended)
 1. Go to the [Releases](https://github.com/ctmaqil/CTMYTDownloader/releases) page
-2. Download the latest `CTM-YouTube-Downloader-v1.0.zip`
+2. Download the latest `CTMYTDownloader-v1.0.zip`
 3. Extract to your desired location
-4. Run `CTMYouTubeDownloader.exe`
+4. Run `YouTubeDownloader.exe`
 
 
 
